@@ -5,8 +5,6 @@
 #include <cmath>
 #include <math.h>
 
-
-
 // Vector3 class to represent 3D vectors
 class Vector3 {
 public:
@@ -138,6 +136,58 @@ void keplerianToCartesian(double a, double e, double i, double omega, double w, 
     velocity.z = (sin_w * sin_i) * vx_orb + (cos_w * sin_i) * vy_orb;
 }
 
+// Function to convert Cartesian coordinates to Keplerian elements
+void cartesianToKeplerian(const Vector3& position, const Vector3& velocity, double mu,
+    double& a, double& e, double& i, double& omega, double& w, double& M) {
+    Vector3 h = position.cross(velocity);
+    Vector3 n(-h.y, h.x, 0.0);
+    double r = position.magnitude();
+    double v = velocity.magnitude();
+    double vr = position.dot(velocity) / r;
+    double H = h.magnitude();
+
+    i = acos(h.z / H);
+
+    double N = n.magnitude();
+    if (N != 0) {
+        omega = acos(n.x / N);
+        if (n.y < 0) omega = 2 * M_PI - omega;
+    }
+    else {
+        omega = 0;
+    }
+
+    Vector3 eVec = (position * (v * v - mu / r) - velocity * (r * vr)) * (1.0 / mu);
+    e = eVec.magnitude();
+
+    if (N != 0) {
+        if (eVec.z >= 0) {
+            w = acos(n.dot(eVec) / (N * e));
+        }
+        else {
+            w = 2 * M_PI - acos(n.dot(eVec) / (N * e));
+        }
+    }
+    else {
+        w = 0;
+    }
+
+    a = 1 / (2 / r - v * v / mu);
+
+    if (e != 0) {
+        M = acos(eVec.dot(position) / (e * r));
+        if (vr < 0) M = 2 * M_PI - M;
+    }
+    else {
+        M = 0;
+    }
+
+    i *= 180.0 / M_PI;
+    omega *= 180.0 / M_PI;
+    w *= 180.0 / M_PI;
+    M *= 180.0 / M_PI;
+}
+
 // Spacecraft class to represent the spacecraft state
 class Spacecraft {
 public:
@@ -147,10 +197,18 @@ public:
     Vector3 angularVelocity;
     double mass;
     Vector3 momentOfInertia;
+    double dragCoefficient;
+    double referenceArea;
+    double atmosphericDensity;
+    double reflectivity;
+    double srpArea;
+    double distanceFromSun;
+    double deltaV;
 
     Spacecraft()
         : position(), velocity(), orientation(), angularVelocity(),
-        mass(1.0), momentOfInertia(1.0, 1.0, 1.0) {}
+        mass(1.0), momentOfInertia(1.0, 1.0, 1.0), dragCoefficient(2.2), referenceArea(1.0),
+        atmosphericDensity(1e-12), reflectivity(1.0), srpArea(1.0), distanceFromSun(1.496e8), deltaV(0) {}
 
     void applyForce(const Vector3& force, double dt) {
         Vector3 acceleration = force * (1.0 / mass);
@@ -177,6 +235,12 @@ public:
     }
 
     void update(double dt) {
+        Vector3 gravity = calculateGravity();
+        Vector3 drag = calculateDrag();
+        Vector3 srp = calculateSRP();
+
+        applyForce(gravity + drag + srp, dt);
+
         position = position + velocity * dt;
         Quaternion deltaOrientation = Quaternion(
             0,
@@ -186,12 +250,63 @@ public:
         ) * orientation;
         orientation = (orientation + deltaOrientation).normalize();
     }
+
+    Vector3 calculateGravity() {
+        double mu = 398600.4418; // Standard gravitational parameter for Earth (km^3/s^2)
+        double r = position.magnitude();
+        double Fg = mu * mass / (r * r);
+        return position.normalize() * -Fg;
+    }
+
+    Vector3 calculateDrag() {
+        double v = velocity.magnitude();
+        double Fd = 0.5 * atmosphericDensity * v * v * dragCoefficient * referenceArea;
+        return velocity.normalize() * -Fd;
+    }
+
+    Vector3 calculateSRP() {
+        double P = 4.56e-6; // Solar radiation pressure at 1 AU in N/m^2
+        double Fsrp = P * srpArea * reflectivity / (distanceFromSun * distanceFromSun);
+        return position.normalize() * Fsrp;
+    }
+
+    void performMaintenanceManeuver(double t, const double& a_orig, const double& e_orig, const double& i_orig, const double& omega_orig, const double& w_orig, const double& M_orig, double mu, double dt) {
+        // Calculate current Keplerian elements
+        double a_new, e_new, i_new, omega_new, w_new, M_new;
+        cartesianToKeplerian(position, velocity, mu, a_new, e_new, i_new, omega_new, w_new, M_new);
+
+        // Calculate delta-V needed to correct orbit
+        Vector3 correctiveForce(0, 0, 0);
+
+        // Correct semi-major axis (a)
+        if (fabs(a_new - a_orig) > 150) {
+            double da = a_orig - a_new;
+            Vector3 deltaV_vec = velocity.normalize() * (da * sqrt(mu / (a_orig * a_orig * a_orig)));
+            correctiveForce = correctiveForce + deltaV_vec;
+        }
+
+        // Correct inclination (i)
+        if (fabs(i_new - i_orig) > 2) {
+            double di = i_orig - i_new;
+            Vector3 h = position.cross(velocity);
+            Vector3 n(-h.y, h.x, 0.0);
+            Vector3 deltaV_vec = n.normalize() * (2 * sqrt(mu / a_orig) * sin(di * M_PI / 180.0 / 2));
+            correctiveForce = correctiveForce + deltaV_vec;
+        }
+
+        // Apply corrective force based on delta-V
+        if (correctiveForce.magnitude() > 0.0) {
+            applyForce(correctiveForce, dt); // Apply corrective force over the time step
+            deltaV += correctiveForce.magnitude(); // Update total deltaV used
+        }
+    }
 };
 
 int main() {
     Spacecraft spacecraft;
     std::ofstream outFile("spacecraft_simulation.csv");
-    outFile << "Time,Position_X,Position_Y,Position_Z,Orientation_W,Orientation_X,Orientation_Y,Orientation_Z,Velocity_X,Velocity_Y,Velocity_Z,AngularVelocity_X,AngularVelocity_Y,AngularVelocity_Z\n";
+    outFile << "Time,Position_X,Position_Y,Position_Z,Orientation_W,Orientation_X,Orientation_Y,Orientation_Z,Velocity_X,Velocity_Y,Velocity_Z,AngularVelocity_X,AngularVelocity_Y,AngularVelocity_Z,"
+        << "SemiMajorAxis,Eccentricity,Inclination,RAAN,ArgumentOfPeriapsis,MeanAnomaly,DeltaV\n";
 
     // Keplerian elements (example values)
     double a = 7000;         // Semi-major axis (km)
@@ -204,18 +319,20 @@ int main() {
 
     keplerianToCartesian(a, e, i, omega, w, M, mu, spacecraft.position, spacecraft.velocity);
 
-    // Simulate for 10 seconds with a time step of 0.1 seconds
-    double simulationTime = 10.0;
+    // Store the original Keplerian elements
+    double a_orig = a, e_orig = e, i_orig = i, omega_orig = omega, w_orig = w, M_orig = M;
+
+    // Simulate for 86400 seconds (one day) with a time step of 5 seconds
+    double simulationTime = 500.0;
     double timeStep = 0.1;
 
     for (double t = 0; t < simulationTime; t += timeStep) {
-        // Apply some arbitrary force and torque
-        Vector3 force(0, 0, 1);
-        Vector3 torque(0.01, 0.01, 0);
-
-        spacecraft.applyForce(force, timeStep);
-        spacecraft.applyTorque(torque, timeStep);
+        spacecraft.performMaintenanceManeuver(t, a_orig, e_orig, i_orig, omega_orig, w_orig, M_orig, mu, timeStep);
         spacecraft.update(timeStep);
+
+        // Convert current state to Keplerian elements
+        double a_new, e_new, i_new, omega_new, w_new, M_new;
+        cartesianToKeplerian(spacecraft.position, spacecraft.velocity, mu, a_new, e_new, i_new, omega_new, w_new, M_new);
 
         // Print the spacecraft state
         std::cout << "Time: " << t << " s\n";
@@ -244,12 +361,22 @@ int main() {
             << spacecraft.velocity.z << ","
             << spacecraft.angularVelocity.x << ","
             << spacecraft.angularVelocity.y << ","
-            << spacecraft.angularVelocity.z << "\n";
+            << spacecraft.angularVelocity.z << ","
+            << a_new << ","
+            << e_new << ","
+            << i_new << ","
+            << omega_new << ","
+            << w_new << ","
+            << M_new << ","
+            << spacecraft.deltaV << "\n";
     }
 
     outFile.close();
     return 0;
 }
+
+
+
 
 //TODO
 
