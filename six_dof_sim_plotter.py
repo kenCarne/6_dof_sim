@@ -42,7 +42,7 @@ plt.grid(True)
 plt.show()
 
 # Create subplots for Keplerian Elements
-fig, axs = plt.subplots(3, 1, figsize=(10, 18))
+fig, axs = plt.subplots(6, 1, figsize=(10, 36))
 
 # Plot SemiMajorAxis
 axs[0].plot(df["Time"], df["SemiMajorAxis"], label="SemiMajorAxis")
@@ -68,6 +68,30 @@ axs[2].set_ylabel("Inclination (degrees)")
 axs[2].legend()
 axs[2].grid(True)
 
+# Plot Right Ascension of the Ascending Node (RAAN)
+axs[3].plot(df["Time"], df["RAAN"], label="RAAN")
+axs[3].set_title("RAAN Over Time")
+axs[3].set_xlabel("Time (s)")
+axs[3].set_ylabel("RAAN (degrees)")
+axs[3].legend()
+axs[3].grid(True)
+
+# Plot Argument of Periapsis
+axs[4].plot(df["Time"], df["ArgumentOfPeriapsis"], label="Argument of Periapsis")
+axs[4].set_title("Argument of Periapsis Over Time")
+axs[4].set_xlabel("Time (s)")
+axs[4].set_ylabel("Argument of Periapsis (degrees)")
+axs[4].legend()
+axs[4].grid(True)
+
+# Plot Mean Anomaly
+axs[5].plot(df["Time"], df["MeanAnomaly"], label="Mean Anomaly")
+axs[5].set_title("Mean Anomaly Over Time")
+axs[5].set_xlabel("Time (s)")
+axs[5].set_ylabel("Mean Anomaly (degrees)")
+axs[5].legend()
+axs[5].grid(True)
+
 # Adjust layout
 plt.tight_layout()
 plt.show()
@@ -84,4 +108,39 @@ plt.legend()
 plt.grid(True)
 plt.show()
 
+# Create subplots for deltaV and its components
+fig, axs = plt.subplots(4, 1, figsize=(10, 24))
 
+# Plot deltaV
+axs[0].plot(df["Time"], df["DeltaV"], label="DeltaV")
+axs[0].set_title("DeltaV Over Time")
+axs[0].set_xlabel("Time (s)")
+axs[0].set_ylabel("DeltaV (m/s)")
+axs[0].legend()
+axs[0].grid(True)
+
+# Plot deltaV components
+axs[1].plot(df["Time"], df["DeltaV_X"], label="DeltaV X")
+axs[1].set_title("DeltaV X Over Time")
+axs[1].set_xlabel("Time (s)")
+axs[1].set_ylabel("DeltaV X (m/s)")
+axs[1].legend()
+axs[1].grid(True)
+
+axs[2].plot(df["Time"], df["DeltaV_Y"], label="DeltaV Y")
+axs[2].set_title("DeltaV Y Over Time")
+axs[2].set_xlabel("Time (s)")
+axs[2].set_ylabel("DeltaV Y (m/s)")
+axs[2].legend()
+axs[2].grid(True)
+
+axs[3].plot(df["Time"], df["DeltaV_Z"], label="DeltaV Z")
+axs[3].set_title("DeltaV Z Over Time")
+axs[3].set_xlabel("Time (s)")
+axs[3].set_ylabel("DeltaV Z (m/s)")
+axs[3].legend()
+axs[3].grid(True)
+
+# Adjust layout
+plt.tight_layout()
+plt.show()

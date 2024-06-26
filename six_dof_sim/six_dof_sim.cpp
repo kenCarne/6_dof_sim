@@ -25,6 +25,10 @@ public:
         return Vector3(x * scalar, y * scalar, z * scalar);
     }
 
+    Vector3 operator/(double scalar) const {
+        return Vector3(x / scalar, y / scalar, z / scalar);
+    }
+
     Vector3 cross(const Vector3& v) const {
         return Vector3(y * v.z - z * v.y, z * v.x - x * v.z, x * v.y - y * v.x);
     }
@@ -157,7 +161,7 @@ void cartesianToKeplerian(const Vector3& position, const Vector3& velocity, doub
         omega = 0;
     }
 
-    Vector3 eVec = (position * (v * v - mu / r) - velocity * (r * vr)) * (1.0 / mu);
+    Vector3 eVec = (position * (v * v - mu / r) - velocity * (r * vr)) / mu;
     e = eVec.magnitude();
 
     if (N != 0) {
@@ -204,11 +208,12 @@ public:
     double srpArea;
     double distanceFromSun;
     double deltaV;
+    Vector3 deltaV_components;
 
     Spacecraft()
         : position(), velocity(), orientation(), angularVelocity(),
         mass(1.0), momentOfInertia(1.0, 1.0, 1.0), dragCoefficient(2.2), referenceArea(1.0),
-        atmosphericDensity(1e-12), reflectivity(1.0), srpArea(1.0), distanceFromSun(1.496e8), deltaV(0) {}
+        atmosphericDensity(1e-12), reflectivity(1.0), srpArea(1.0), distanceFromSun(1.496e8), deltaV(0), deltaV_components() {}
 
     void applyForce(const Vector3& force, double dt) {
         Vector3 acceleration = force * (1.0 / mass);
@@ -279,14 +284,14 @@ public:
         Vector3 correctiveForce(0, 0, 0);
 
         // Correct semi-major axis (a)
-        if (fabs(a_new - a_orig) > 150) {
+        if (fabs(a_new - a_orig) > 15) {
             double da = a_orig - a_new;
             Vector3 deltaV_vec = velocity.normalize() * (da * sqrt(mu / (a_orig * a_orig * a_orig)));
             correctiveForce = correctiveForce + deltaV_vec;
         }
 
         // Correct inclination (i)
-        if (fabs(i_new - i_orig) > 2) {
+        if (fabs(i_new - i_orig) > 0.1) {
             double di = i_orig - i_new;
             Vector3 h = position.cross(velocity);
             Vector3 n(-h.y, h.x, 0.0);
@@ -294,10 +299,19 @@ public:
             correctiveForce = correctiveForce + deltaV_vec;
         }
 
+        // Correct eccentricity (e)
+        if (fabs(e_new - e_orig) > 0.001) {
+            Vector3 eVec = (position * (velocity.magnitude() * velocity.magnitude() - mu / position.magnitude()) - velocity * (position.magnitude() * velocity.dot(position) / position.magnitude())) / mu;
+            double de = e_new - e_orig;
+            Vector3 deltaV_vec = eVec.normalize() * de;
+            correctiveForce = correctiveForce + deltaV_vec;
+        }
+
         // Apply corrective force based on delta-V
         if (correctiveForce.magnitude() > 0.0) {
             applyForce(correctiveForce, dt); // Apply corrective force over the time step
             deltaV += correctiveForce.magnitude(); // Update total deltaV used
+            deltaV_components = deltaV_components + correctiveForce * dt; // Update deltaV components
         }
     }
 };
@@ -306,12 +320,12 @@ int main() {
     Spacecraft spacecraft;
     std::ofstream outFile("spacecraft_simulation.csv");
     outFile << "Time,Position_X,Position_Y,Position_Z,Orientation_W,Orientation_X,Orientation_Y,Orientation_Z,Velocity_X,Velocity_Y,Velocity_Z,AngularVelocity_X,AngularVelocity_Y,AngularVelocity_Z,"
-        << "SemiMajorAxis,Eccentricity,Inclination,RAAN,ArgumentOfPeriapsis,MeanAnomaly,DeltaV\n";
+        << "SemiMajorAxis,Eccentricity,Inclination,RAAN,ArgumentOfPeriapsis,MeanAnomaly,DeltaV,DeltaV_X,DeltaV_Y,DeltaV_Z\n";
 
-    // Keplerian elements (example values)
+    // Keplerian elements (unstable inclination orbit)
     double a = 7000;         // Semi-major axis (km)
     double e = 0.001;        // Eccentricity
-    double i = 98.7;         // Inclination (degrees)
+    double i = 120.0;        // Inclination (degrees)
     double omega = 257.7;    // Right ascension of the ascending node (degrees)
     double w = 0.0;          // Argument of periapsis (degrees)
     double M = 0.0;          // Mean anomaly (degrees)
@@ -368,7 +382,10 @@ int main() {
             << omega_new << ","
             << w_new << ","
             << M_new << ","
-            << spacecraft.deltaV << "\n";
+            << spacecraft.deltaV << ","
+            << spacecraft.deltaV_components.x << ","
+            << spacecraft.deltaV_components.y << ","
+            << spacecraft.deltaV_components.z << "\n";
     }
 
     outFile.close();
@@ -382,7 +399,7 @@ int main() {
 
 //add Sensors -> create random matrix generator size of tolerance for sensors
 //add forces -> Drag, SRP, Gravity 
-//incorporate obital maintence burns
+//incorporate obital maintence burns --Efficiently 
 //add EKF for sensors and perabations
-//add different refernce frames
-//gui to select data, enter satellite starting point ect? -> becomes python script, subprocess run C++ six_dof_sim.cpp get output -> plot, gui is plot interface
+//add different reference frames
+//gui to select data, enter satellite starting point/external forces.. -> becomes python script, subprocess run C++ six_dof_sim.cpp get output -> plot, gui is plot interface
