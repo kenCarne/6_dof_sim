@@ -4,6 +4,7 @@
 #include <fstream>
 #include <cmath>
 #include <math.h>
+#include <random>
 
 // Vector3 class to represent 3D vectors
 class Vector3 {
@@ -284,14 +285,14 @@ public:
         Vector3 correctiveForce(0, 0, 0);
 
         // Correct semi-major axis (a)
-        if (fabs(a_new - a_orig) > 15) {
+        if (fabs(a_new - a_orig) > 150) {
             double da = a_orig - a_new;
             Vector3 deltaV_vec = velocity.normalize() * (da * sqrt(mu / (a_orig * a_orig * a_orig)));
             correctiveForce = correctiveForce + deltaV_vec;
         }
 
         // Correct inclination (i)
-        if (fabs(i_new - i_orig) > 0.1) {
+        if (fabs(i_new - i_orig) > 1) {
             double di = i_orig - i_new;
             Vector3 h = position.cross(velocity);
             Vector3 n(-h.y, h.x, 0.0);
@@ -300,7 +301,7 @@ public:
         }
 
         // Correct eccentricity (e)
-        if (fabs(e_new - e_orig) > 0.001) {
+        if (fabs(e_new - e_orig) > 0.0001) {
             Vector3 eVec = (position * (velocity.magnitude() * velocity.magnitude() - mu / position.magnitude()) - velocity * (position.magnitude() * velocity.dot(position) / position.magnitude())) / mu;
             double de = e_new - e_orig;
             Vector3 deltaV_vec = eVec.normalize() * de;
@@ -312,6 +313,13 @@ public:
             applyForce(correctiveForce, dt); // Apply corrective force over the time step
             deltaV += correctiveForce.magnitude(); // Update total deltaV used
             deltaV_components = deltaV_components + correctiveForce * dt; // Update deltaV components
+        }
+
+        // Apply torque to restabilize orientation if needed
+        Vector3 correctiveTorque(0, 0, 0);
+        if (angularVelocity.magnitude() > 0.01) { // Threshold for considering restabilization
+            correctiveTorque = angularVelocity * -1.0; // Dampen angular velocity
+            applyTorque(correctiveTorque, dt);
         }
     }
 };
@@ -336,11 +344,22 @@ int main() {
     // Store the original Keplerian elements
     double a_orig = a, e_orig = e, i_orig = i, omega_orig = omega, w_orig = w, M_orig = M;
 
+    // Random number generator for the external force
+    std::default_random_engine generator;
+    std::uniform_real_distribution<double> distribution(-1.0, 1.0);
+
     // Simulate for 86400 seconds (one day) with a time step of 5 seconds
-    double simulationTime = 500.0;
+    double simulationTime = 100.0;
     double timeStep = 0.1;
 
     for (double t = 0; t < simulationTime; t += timeStep) {
+        // Apply a random external force at 10 seconds
+        if (t == 10.0) {
+            Vector3 randomForce(distribution(generator), distribution(generator), distribution(generator));
+            spacecraft.applyForce(randomForce, timeStep);
+            spacecraft.applyTorque(randomForce, timeStep); // Assuming random torque is same as random force for simplicity
+        }
+
         spacecraft.performMaintenanceManeuver(t, a_orig, e_orig, i_orig, omega_orig, w_orig, M_orig, mu, timeStep);
         spacecraft.update(timeStep);
 
@@ -392,9 +411,6 @@ int main() {
     return 0;
 }
 
-
-
-
 //TODO
 
 //add Sensors -> create random matrix generator size of tolerance for sensors
@@ -403,3 +419,4 @@ int main() {
 //add EKF for sensors and perabations
 //add different reference frames
 //gui to select data, enter satellite starting point/external forces.. -> becomes python script, subprocess run C++ six_dof_sim.cpp get output -> plot, gui is plot interface
+    //kubernetes? 
